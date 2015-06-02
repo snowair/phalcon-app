@@ -7,15 +7,9 @@
 
 namespace Snowair\PhalconApp;
 
-use Phalcon\Di\Injectable;
-use Phalcon\Mvc\ViewInterface;
 use Phalcon\Mvc\Application\Exception;
-use Phalcon\Mvc\ModuleDefinitionInterface;
-use Phalcon\Mvc\RouterInterface;
 use Phalcon\DiInterface;
 use Phalcon\Http\ResponseInterface;
-use Phalcon\Events\ManagerInterface;
-use Phalcon\Mvc\DispatcherInterface;
 
 /**
  * Phalcon\Mvc\Application
