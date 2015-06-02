@@ -558,7 +558,7 @@ class Micro  extends  \Phalcon\Mvc\Micro
      */
     public function handle($uri = null)
 	{
-		$dependencyInjector=null; $eventsManager=null; $status = null=null; $router=null; $matchedRoute=null;
+		$dependencyInjector=null; $eventsManager=null; $status = null; $router=null; $matchedRoute=null;
         $handler=null; $beforeHandlers=null; $params=null; $returnedValue=null; $e=null; $errorHandler=null;
         $afterHandlers=null; $notFoundHandler=null; $finishHandlers=null; $finish=null; $before=null; $after=null;
 
