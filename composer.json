@@ -1,7 +1,5 @@
 {
-  "name": "snowair/phalcon-debugbar",
-  "description": "Integrates PHP Debug Bar with Phalcon.",
-  "keywords": ["phalcon", "debugbar", "profiler", "debug", "webprofiler"],
+  "name": "snowair/phalcon-app",
   "require": {
     "php": ">=5.3.26",
     "ext-phalcon": ">=1.3.4|>=2.0"
