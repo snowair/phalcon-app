@@ -597,7 +597,7 @@ class Micro  extends  \Phalcon\Mvc\Micro
 			$matchedRoute = $router->getMatchedRoute();
 			if (is_object($matchedRoute)) {
 
-                if (! empty($this->_handlers[$matchedRoute->getRouteId()]) ){
+                if ( isset( $this->_handlers[$matchedRoute->getRouteId()]) && !$handler=  $this->_handlers[$matchedRoute->getRouteId()] ){
                     throw new Exception("Matched route doesn't have an associated handler");
                 }
 
