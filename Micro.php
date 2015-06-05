@@ -58,7 +58,7 @@ class Micro  extends  \Phalcon\Mvc\Micro
     /**
      * Sets the DependencyInjector container
      */
-    public function setDI(DiInterface $dependencyInjector)
+    public function setDI( $dependencyInjector)
 	{
 		/**
          * We automatically set ourselves as application service
@@ -329,7 +329,7 @@ class Micro  extends  \Phalcon\Mvc\Micro
      * @return $this|\Phalcon\Mvc\Micro
      * @throws Exception
      */
-    public function mount(CollectionInterface $collection)
+    public function mount( $collection)
 	{
 		$mainHandler=null; $handlers=null; $lazyHandler=null; $prefix=null; $methods=null;
         $pattern=null; $subHandler=null; $realHandler=null; $prefixedPattern=null;
