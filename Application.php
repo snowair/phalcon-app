@@ -272,7 +272,9 @@ class Application extends \Phalcon\Mvc\Application
                  */
                 if ( empty($module["className"]) ) {
                     $className = "Module";
-				}
+				}else{
+                    $className = $module["className"];
+                }
 
 				/**
                  * If developer specify a path try to include the file
