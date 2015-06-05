@@ -109,7 +109,7 @@ class Application extends \Phalcon\Mvc\Application
      *
      * @return $this
      */
-    public function registerModules(array $modules, $merge = false)
+    public function registerModules($modules, $merge = false)
 	{
 		$registeredModules=null;
 
