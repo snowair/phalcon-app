@@ -8,7 +8,6 @@
 namespace Snowair\PhalconApp;
 
 use Phalcon\Application as BaseApplication;
-use Phalcon\Mvc\Application as MvcApplication;
 use Phalcon\DiInterface;
 use Phalcon\Mvc\ViewInterface;
 use Phalcon\Mvc\RouterInterface;
@@ -63,7 +62,7 @@ use Phalcon\Mvc\ModuleDefinitionInterface;
  *
  *</code>
  */
-class Application extends MvcApplication
+class Application extends BaseApplication
 {
     protected$_implicitView = true;
 
@@ -337,7 +336,7 @@ class Application extends MvcApplication
                  * If the dispatcher returns an object we try to render the view in auto-rendering mode
                  */
 				if ($returnedResponse === false && $implicitView === true ){
-                    if (is_object($controller) ){
+                    if (is_object(controller) ){
 
                         $renderStatus = true;
 
