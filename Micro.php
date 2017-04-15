@@ -16,6 +16,8 @@ use Phalcon\Mvc\Micro\LazyLoader;
 use Phalcon\Http\ResponseInterface;
 use Phalcon\Di\ServiceInterface;
 use Phalcon\Di\FactoryDefault;
+use Phalcon\Mvc\Controller;
+use Phalcon\Mvc\Model\BinderInterface;
 
 
 class Micro  extends  \Phalcon\Mvc\Micro
@@ -24,7 +26,7 @@ class Micro  extends  \Phalcon\Mvc\Micro
 
     protected $_dependencyInjector;
 
-    protected $_handlers;
+    protected $_handlers=[];
 
     protected $_router;
 
@@ -44,6 +46,9 @@ class Micro  extends  \Phalcon\Mvc\Micro
 
     protected $_returnedValue;
 
+    protected $_modelBinder;
+
+    protected $_afterBindingHandlers;
 
     /**
      * Phalcon\Mvc\Micro constructor
@@ -562,6 +567,8 @@ class Micro  extends  \Phalcon\Mvc\Micro
         $handler=null; $beforeHandlers=null; $params=null; $returnedValue=null; $e=null; $errorHandler=null;
         $afterHandlers=null; $notFoundHandler=null; $finishHandlers=null; $finish=null; $before=null; $after=null;
         $response=null;
+        $modelBinder=null; $bindCacheKey=null; $routeName=null; $realHandler = null; $methodName=null;
+        $lazyReturned=null; $afterBindingHandlers=null; $afterBinding=null;
 
 		$dependencyInjector = $this->_dependencyInjector;
 		if (!is_object($dependencyInjector)){
@@ -673,14 +680,109 @@ class Micro  extends  \Phalcon\Mvc\Micro
                  * Calling the Handler in the PHP userland
                  */
 				$params = $router->getParams();
-                /**
+
+                $modelBinder = $this->_modelBinder;
+
+				/**
                  * Bound the app to the handler
                  */
-                if (is_object($handler) && $handler instanceof \Closure) {
+				if ( is_object($handler)&& $handler instanceof \Closure ){
                     $handler = \Closure::bind($handler, $this);
+					if ($modelBinder != null ){
+                        $routeName = $matchedRoute->getName();
+						if ($routeName != null ){
+                            $bindCacheKey = "_PHMB_" . $routeName;
+						} else {
+                            $bindCacheKey = "_PHMB_" . $matchedRoute->getPattern();
+						}
+						$params = $modelBinder->bindToHandler($handler, $params, $bindCacheKey);
+					}
 				}
 
-				$returnedValue = call_user_func_array($handler, $params);
+				/**
+                 * Calling the Handler in the PHP userland
+                 */
+
+				 if (is_array($handler)){
+
+                    $realHandler = $handler[0];
+
+					if ( $realHandler instanceof Controller && $modelBinder != null ){
+                        $methodName = $handler[1];
+						$bindCacheKey = "_PHMB_" . get_class($realHandler) . "_" . $methodName;
+						$params = $modelBinder->bindToHandler($realHandler, $params, $bindCacheKey, $methodName);
+					}
+				}
+
+				/**
+                 * Instead of double call_user_func_array when lazy loading we will just call method
+                 */
+				if ($realHandler != null && $realHandler instanceof LazyLoader ){
+                    $methodName = $handler[1];
+					/**
+                     * There is seg fault if we try set directly value of method to returnedValue
+                     */
+					$lazyReturned = $realHandler->callMethod($methodName, $params, $modelBinder);
+					$returnedValue = $lazyReturned;
+				} else {
+                    $returnedValue = call_user_func_array($handler, $params);
+				}
+
+				/**
+                 * Calling afterBinding event
+                 */
+				if  (is_object($eventsManager)){
+                    if ($eventsManager->fire("micro:afterBinding", $this) === false ){
+                        return false;
+                    }
+				}
+
+				$afterBindingHandlers = $this->_afterBindingHandlers;
+				if (is_array($afterBindingHandlers) ){
+                    $this->_stopped = false;
+
+					/**
+                     * Calls the after binding handlers
+                     */
+                    foreach ($afterBindingHandlers as $afterBinding) {
+
+                        if (is_object( $afterBinding) && $afterBinding instanceof MiddlewareInterface ){
+
+                            /**
+                             * Call the middleware
+                             */
+                            $status = $afterBinding->call($this);
+
+							/**
+                             * Reload the status
+                             * break the execution if the middleware was stopped
+                             */
+							if ($this->_stopped ){
+                                break;
+                            }
+
+							continue;
+						}
+
+						if (!is_callable($afterBinding)) {
+							throw new Exception("'afterBinding' handler is not callable");
+						}
+
+						/**
+                         * Call the afterBinding handler, if it returns false exit
+                         */
+						if (call_user_func($afterBinding) === false ){
+                            return false;
+                        }
+
+						/**
+                         * Reload the 'stopped' status
+                         */
+						if ($this->_stopped) {
+                            return $status;
+                        }
+					}
+				}
 
 				/**
                  * Update the returned value
@@ -955,9 +1057,11 @@ class Micro  extends  \Phalcon\Mvc\Micro
     /**
      * Allows to obtain a shared service in the internal services container using the array syntax
      *
-     *<code>
-     *	var_dump($di['request']);
-     *</code>
+     * <code>
+     * var_dump(
+     *     $app["request"]
+     * );
+     * </code>
      *
      * @param string $alias
      * @return mixed
@@ -991,6 +1095,17 @@ class Micro  extends  \Phalcon\Mvc\Micro
 		return $this;
 	}
 
+    /**
+     * Appends a afterBinding middleware to be called after model binding
+     *
+     * @param callable $handler
+     * @return $this
+     */
+    public function afterBinding($handler)
+	{
+		$this->_afterBindingHandlers[] = $handler;
+		return $this;
+	}
 	/**
      * Appends an 'after' middleware to be called after execute the route
      *
@@ -1025,4 +1140,55 @@ class Micro  extends  \Phalcon\Mvc\Micro
         return $this->_handlers;
 	}
 
+
+    /**
+     * Gets model binder
+     */
+    public function getModelBinder()
+	{
+		return $this->_modelBinder;
+	}
+
+/**
+ * Sets model binder
+ *
+ * <code>
+ * $micro = new Micro($di);
+ * $micro->setModelBinder(new Binder(), 'cache');
+ * </code>
+ */
+    public function setModelBinder(BinderInterface $modelBinder, $cache = null)
+	{
+        $dependencyInjector=null;
+
+        if ( is_string($cache)) {
+            $dependencyInjector = $this->_dependencyInjector;
+			$cache = $dependencyInjector->get($cache);
+		}
+
+		if ($cache !== null ){
+            $modelBinder->setCache($cache);
+		}
+
+		$this->_modelBinder = $modelBinder;
+
+		return $this;
+	}
+
+	/**
+     * Returns bound models from binder instance
+     * @return array
+     */
+	public function getBoundModels()
+	{
+        $modelBinder=null;
+
+        $modelBinder = $this->_modelBinder;
+
+		if ($modelBinder != null) {
+            return $modelBinder->getBoundModels();
+		}
+
+		return [];
+	}
 }
