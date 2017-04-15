@@ -7,9 +7,16 @@
 
 namespace Snowair\PhalconApp;
 
-use Phalcon\Mvc\Application\Exception;
+use Phalcon\Application as BaseApplication;
 use Phalcon\DiInterface;
+use Phalcon\Mvc\ViewInterface;
+use Phalcon\Mvc\RouterInterface;
 use Phalcon\Http\ResponseInterface;
+use Phalcon\Events\ManagerInterface;
+use Phalcon\Mvc\DispatcherInterface;
+use Phalcon\Mvc\Application\Exception;
+use Phalcon\Mvc\Router\RouteInterface;
+use Phalcon\Mvc\ModuleDefinitionInterface;
 
 /**
  * Phalcon\Mvc\Application
@@ -18,15 +25,16 @@ use Phalcon\Http\ResponseInterface;
  * needed and integrating it with the rest to allow the MVC pattern to operate as desired.
  *
  *<code>
+ * use Phalcon\Mvc\Application;
  *
- * class Application extends \Phalcon\Mvc\Application
+ * class MyApp extends Application
  * {
  *
  *		/**
  *		 * Register the services here to make them general or register
  *		 * in the ModuleDefinition to make them module-specific
  *		 *\/
- *		protected function _registerServices()
+ *		protected function registerServices()
  *		{
  *
  *		}
@@ -49,31 +57,14 @@ use Phalcon\Http\ResponseInterface;
  *		}
  *	}
  *
- *	$application = new Application();
+ *	$application = new MyApp();
  *	$application->main();
  *
  *</code>
  */
-class Application extends \Phalcon\Mvc\Application
+class Application extends BaseApplication
 {
-
-    protected $_defaultModule;
-
-    protected$_modules;
-
     protected$_implicitView = true;
-
-    /**
-     * Phalcon\Mvc\Application
-     *
-     * @param DiInterface $dependencyInjector
-     */
-    public function __construct(DiInterface $dependencyInjector = null)
-	{
-		if( is_object($dependencyInjector) == "object" ) {
-			$this->_dependencyInjector = $dependencyInjector;
-		}
-    }
 
     /**
      * By default. The view is implicitly buffering all the output
@@ -87,96 +78,6 @@ class Application extends \Phalcon\Mvc\Application
 	{
 		$this->_implicitView = $implicitView;
 		return $this;
-	}
-
-    /**
-     * Register an array of modules present in the application
-     *<code>
-     *    $this->registerModules(array(
-     *        'frontend' => array(
-     *            'className' => 'Multiple\Frontend\Module',
-     *            'path' => '../apps/frontend/Module.php'
-     *        ),
-     *        'backend' => array(
-     *            'className' => 'Multiple\Backend\Module',
-     *            'path' => '../apps/backend/Module.php'
-     *        )
-     *    ));
-     *</code>
-     *
-     * @param array $modules
-     * @param bool  $merge
-     *
-     * @return $this
-     */
-    public function registerModules(array $modules, $merge = false)
-	{
-		$registeredModules=null;
-
-		if( $merge === false) {
-			$this->_modules = $modules;
-		} else {
-            $registeredModules = $this->_modules;
-			if (is_array($registeredModules)) {
-                $this->_modules = array_merge($registeredModules, $modules);
-            } else {
-                $this->_modules = $modules;
-            }
-		}
-
-        return $this;
-    }
-
-    /**
-     * Return the modules registered in the application
-     *
-     * @return array
-     */
-    public function getModules()
-    {
-        return $this->_modules;
-	}
-
-    /**
-     * Gets the module definition registered in the application via module name
-     *
-     * @param $name
-     *
-     * @return array|object
-     * @throws Exception
-     * @internal param name $string
-     */
-    public function getModule($name)
-	{
-
-		if  ( isset($this->_modules[$name])) {
-            return $this->_modules[$name];
-		}
-
-        throw new Exception("Module '" . $name . "' isn't registered in the application container");
-
-    }
-
-    /**
-     * Sets the module name to be used if the router doesn't return a valid module
-     *
-     * @param string $defaultModule
-     *
-     * @return $this
-     */
-    public function setDefaultModule($defaultModule)
-	{
-		$this->_defaultModule = $defaultModule;
-		return $this;
-	}
-
-    /**
-     * Returns the default module name
-     * @return string
-     */
-    public function getDefaultModule()
-	{
-		return $this->_defaultModule;
 	}
 
     /**
@@ -205,6 +106,8 @@ class Application extends \Phalcon\Mvc\Application
         $controller=null;
         $possibleResponse=null;
 		$renderStatus=null;
+        $matchedRoute=null;
+        $match=null;
 
 		$dependencyInjector = $this->_dependencyInjector;
 		if ( !is_object($dependencyInjector) ) {
@@ -228,6 +131,46 @@ class Application extends \Phalcon\Mvc\Application
          * Handle the URI pattern (if any)
          */
 		$router->handle($uri);
+
+        /**
+         * If a 'match' callback was defined in the matched route
+         * The whole dispatcher+view behavior can be overriden by the developer
+         */
+        $matchedRoute = $router->getMatchedRoute();
+		if (  is_object($matchedRoute) ){
+            $match = $matchedRoute->getMatch();
+			if ($match !== null ){
+
+                if ($match instanceof \Closure ){
+                    $match = \Closure::bind($match, $dependencyInjector);
+				}
+
+                /**
+                 * Directly call the match callback
+                 */
+                $possibleResponse = call_user_func_array($match, $router->getParams());
+
+				/**
+                 * If the returned value is a string return it as body
+                 */
+				if ( is_string($possibleResponse) ) {
+                    $response = $dependencyInjector->getShared("response");
+					$response->setContent($possibleResponse);
+					return $response;
+				}
+
+				/**
+                 * If the returned string is a ResponseInterface use it as response
+                 */
+				if ( is_object($possibleResponse) ) {
+                    if ($possibleResponse instanceof ResponseInterface ){
+                        $possibleResponse->sendHeaders();
+						$possibleResponse->sendCookies();
+						return $possibleResponse;
+					}
+                }
+			}
+		}
 
 		/**
          * If the router doesn't return a valid module we use the default module
@@ -282,11 +225,10 @@ class Application extends \Phalcon\Mvc\Application
 				if ( isset($module["path"]) ){
                     $path= $module["path"];
                     if (!class_exists($className, false)) {
-						if (file_exists($path)) {
-                           require $path;
-                        } else {
+						if (!file_exists($path)) {
                             throw new Exception("Module definition path '" . $path . "' doesn't exist");
                         }
+                        require $path;
                     }
                 }
 
@@ -303,11 +245,10 @@ class Application extends \Phalcon\Mvc\Application
                 /**
                  * A module definition object, can be a Closure instance
                  */
-                if ($module instanceof \Closure) {
-                    $moduleObject = call_user_func_array($module, array($dependencyInjector));
-				} else {
+                if (!$module instanceof \Closure) {
                     throw new Exception("Invalid module definition");
                 }
+                $moduleObject = call_user_func_array($module, array($dependencyInjector));
             }
 
 			/**
@@ -365,48 +306,51 @@ class Application extends \Phalcon\Mvc\Application
          */
 		$possibleResponse = $dispatcher->getReturnedValue();
 
+        /**
+         * Returning false from an action cancels the view
+         */
 		if ( $possibleResponse === false) {
             $response = $dependencyInjector->getShared("response");
 		} else {
-            if ( is_object($possibleResponse) ) {
+            /**
+             * Returning a string makes use it as the body of the response
+             */
+            if ( is_string($possibleResponse) ) {
+                $response = $dependencyInjector->getShared("response");
+				$response->setContent($possibleResponse);
+			} else {
 
                 /**
                  * Check if the returned object is already a response
                  */
-                $returnedResponse = $possibleResponse instanceof ResponseInterface;
-            } else {
-                $returnedResponse = false;
-            }
+                $returnedResponse = (is_object( $possibleResponse) && ($possibleResponse instanceof ResponseInterface));
 
-			/**
-             * Calling afterHandleRequest
-             */
-			if (is_object($eventsManager)) {
-                $eventsManager->fire("application:afterHandleRequest", $this, $controller);
-			}
+				/**
+                 * Calling afterHandleRequest
+                 */
+				if ($eventsManager) {
+                    $eventsManager->fire("application:afterHandleRequest", $this, $controller);
+				}
 
-
-
-			/**
-             * If the dispatcher returns an object we try to render the view in auto-rendering mode
-             */
-			if ($returnedResponse === false) {
-                if ($implicitView === true) {
-                    if (is_object($controller)) {
+				/**
+                 * If the dispatcher returns an object we try to render the view in auto-rendering mode
+                 */
+				if ($returnedResponse === false && $implicitView === true ){
+                    if (is_object(controller) ){
 
                         $renderStatus = true;
 
 						/**
                          * This allows to make a custom view render
                          */
-						if ( is_object($eventsManager) ) {
+						if (is_object($eventsManager) ){
                             $renderStatus = $eventsManager->fire("application:viewRender", $this, $view);
 						}
 
 						/**
                          * Check if the view process has been treated by the developer
                          */
-						if ($renderStatus !== false) {
+						if ($renderStatus !== false ){
 
                             /**
                              * Automatic render based on the latest controller executed
@@ -419,32 +363,31 @@ class Application extends \Phalcon\Mvc\Application
 						}
 					}
 				}
-            }
 
-			/**
-             * Finish the view component (stop output buffering)
-             */
-			if ($implicitView === true) {
-                $view->finish();
-			}
-
-			if ($returnedResponse === false) {
-
-                $response = $dependencyInjector->getShared("response");
-				if ($implicitView === true) {
-
-                    /**
-                     * The content returned by the view is passed to the response service
-                     */
-                    $response->setContent($view->getContent());
+				/**
+                 * Finish the view component (stop output buffering)
+                 */
+				if ($implicitView === true ){
+                    $view->finish();
 				}
 
-			} else {
+				if ($returnedResponse === true ){
 
-                /**
-                 * We don't need to create a response because there is one already created
-                 */
-                $response = $possibleResponse;
+                    /**
+                     * We don't need to create a response because there is one already created
+                     */
+                    $response = $possibleResponse;
+				} else {
+
+                    $response = $dependencyInjector->getShared("response");
+					if ($implicitView === true ){
+
+                        /**
+                         * The content returned by the view is passed to the response service
+                         */
+                        $response->setContent($view->getContent());
+					}
+				}
 			}
 		}
 
@@ -456,7 +399,7 @@ class Application extends \Phalcon\Mvc\Application
 		}
 
 		/**
-         * Headers and Cookies are automatically send
+         * Headers and Cookies are automatically sent
          */
 		$response->sendHeaders();
 		$response->sendCookies();
