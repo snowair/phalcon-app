@@ -561,6 +561,7 @@ class Micro  extends  \Phalcon\Mvc\Micro
 		$dependencyInjector=null; $eventsManager=null; $status = null; $router=null; $matchedRoute=null;
         $handler=null; $beforeHandlers=null; $params=null; $returnedValue=null; $e=null; $errorHandler=null;
         $afterHandlers=null; $notFoundHandler=null; $finishHandlers=null; $finish=null; $before=null; $after=null;
+        $response=null;
 
 		$dependencyInjector = $this->_dependencyInjector;
 		if (!is_object($dependencyInjector)){
@@ -672,6 +673,13 @@ class Micro  extends  \Phalcon\Mvc\Micro
                  * Calling the Handler in the PHP userland
                  */
 				$params = $router->getParams();
+                /**
+                 * Bound the app to the handler
+                 */
+                if (is_object($handler) && $handler instanceof \Closure) {
+                    $handler = \Closure::bind($handler, $this);
+				}
+
 				$returnedValue = call_user_func_array($handler, $params);
 
 				/**
@@ -852,6 +860,15 @@ class Micro  extends  \Phalcon\Mvc\Micro
                     throw $e;
                 }
             }
+		}
+
+        /**
+         * Check if the returned value is a string and take it as response body
+         */
+        if (is_string($returnedValue)){
+            $response = $dependencyInjector->getShared("response");
+			$response->setContent($returnedValue);
+			$response->send();
 		}
 
 		/**
